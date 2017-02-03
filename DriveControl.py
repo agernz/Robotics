@@ -10,6 +10,8 @@
 import pygame
 # Using serial library to communicate with arduino
 import serial
+# Using struct library to convert to binary
+import struct
 
 # Must initialize the library
 pygame.init()
@@ -18,42 +20,50 @@ pygame.init()
 try:
     joy1 = pygame.joystick.Joystick(0)
     joy1.init()
-except Error as e:
+except pygame.error as e:
     print('Controller 1 not connected!')
 
 #------Global Variables------#
 
 # Serial connection with arduino over usb, baud rate of 9600
-ser = serial.Serial('/dev/ttyACM0', 9600)
+try:
+    ser = serial.Serial('COM4', 9600)
+except serial.SerialException as e:
+    print('Can not connect to Arduino')
 
 # Game loop condition
 running = True
 
 # Codes for commands to send
-forward = 'N'
-reverse = 'S'
-strafeL = 'E'
-strafeR = 'W'
-rotateR = 'R'
-rotateL = 'L'
-EXIT = 'Q'
+forward = 1
+reverse = 2
+strafeL = 3
+strafeR = 4
+rotateR = 5
+rotateL = 6
+EXIT = 255
 
 # Buttons and Joystick threshold
 Button_QUIT = 7
-THRESHOLD = .15
+THRESHOLD = .2
 
 #------Functions------#
 
 # End program
 def stop():
-    ser.write(EXIT)
+    send(EXIT)
+    ser.close()
     pygame.quit()
     print('Program Exited')
+
+def send(value, speed = 0):
+    ser.write(struct.pack('>B', value))
+    ser.write(struct.pack('>B', abs(speed)))
 
 
 #------Main Loop------#
 while running:
-    
+
     # User did something
     for event in pygame.event.get(): 
         
@@ -61,38 +71,47 @@ while running:
         if event.type == pygame.JOYBUTTONDOWN or event.type == pygame.JOYAXISMOTION:
 
             # Quit
-            if joystick.get_button(7):
+            if joy1.get_button(7):
                 running = False
 
             #--Drive--#
-            axis1_vert = joystick.get_axis(1)
-            axis1_hor = joystick.get_axis(0)
-            axis2_vert = joystick.get_axis(3)
-            axis2_hor = joystick.get_axis(4)
+            axis1_vert = joy1.get_axis(1)
+            axis1_hor = joy1.get_axis(0)
+            axis2_vert = joy1.get_axis(3)
+            axis2_hor = joy1.get_axis(4)
 
             # Forward, left joystick moved up
             if  axis1_vert < -THRESHOLD:
-                ser.write('{0}:{:>6.2f}'.format(forward, axis1_vert))
-                
+                print('forward')
+                send(forward, int(100*axis1_vert))
+
             # Reverse, left joystick moved down
             elif axis1_vert > THRESHOLD:
-                ser.write('{0}:{:>6.2f}'.format(reverse, axis1_vert))
+                print('reverse')
+                send(reverse, int(100*axis1_vert))
 
             # Strafe left, left joystick moved to the left
             elif  axis1_hor < -THRESHOLD:
-                ser.write('{0}:{:>6.2f}'.format(strafeL, axis1_hor))
+                print('strafe left')
+                send(strafeL, int(100*axis1_hor))
                 
             # Strafe right, left joystick moved to the right
             elif axis1_hor > THRESHOLD:
-                ser.write('{0}:{:>6.2f}'.format(strafeR, axis1_hor))
+                print('strafe right')
+                send(strafeR, int(100*axis1_hor))
 
             # Rotate left, right joystick moved to the left
             elif  axis2_hor < -THRESHOLD:
-                ser.write('{0}:{:>6.2f}'.format(rotateL, axis2_hor))
+                print('rotate left')
+                send(rotateL, int(100*axis2_hor))
                 
             # Rotate right, right joystick moved to the right
             elif axis2_hor > THRESHOLD:
-                ser.write('{0}:{:>6.2f}'.format(rotateR, axis2_hor))
+                print('rotate right')
+                send(rotateR, int(100*axis2_hor))
+            
+            else:
+                send(0)
                 
 
-stop() 
+stop() 
