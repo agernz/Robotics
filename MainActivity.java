@@ -1,39 +1,46 @@
 package com.agernz.btrobotcontrol;
 
 import android.bluetooth.BluetoothSocket;
+import android.os.Handler;
 import android.provider.Settings;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-
 import android.content.Intent;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
-
 import android.widget.Button;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.view.View.OnClickListener;
-import android.widget.Toast;
 
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Vector;
 
 public class MainActivity extends AppCompatActivity {
     private String BT_ADAPTER = "HC-05";
     private BluetoothAdapter BA;
-    private BluetoothSocket btSocket = null;
-    private OutputStream outStream = null;
+    private BluetoothSocket btSocket;
+    private OutputStream outStream;
+    private InputStream inStream;
     private static final UUID MY_UUID =
             UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
+    Thread inThread;
+    byte[] readBuffer;
+    int bufferPos;
+    int counter;
+    volatile boolean stopThread;
+
     private Boolean connected = false;
     private Boolean paired = false;
+    private Vector<String> sensorData = new Vector<String>();
 
     ScrollView sv;
     TextView tv;
@@ -124,17 +131,21 @@ public class MainActivity extends AppCompatActivity {
                                 }
                             }
 
-                            // Create a data stream so we can talk to server.
-                            print("Creating an output stream...");
+                            // Create an output and input data stream so we can talk to server
+                            print("Creating data streams...");
                             try {
                                 outStream = btSocket.getOutputStream();
+                                inStream = btSocket.getInputStream();
                                 if (connected)
                                     print("Connection successfully established!");
                             } catch (Exception e) {
                                 connected = false;
-                                print("Failed to create an output stream");
+                                print("Failed to create data streams");
                             }
 
+                            //begin receiving data
+                            if(connected)
+                                readData();
                             //found device, so exit loop
                             break;
                         }
@@ -379,21 +390,104 @@ public class MainActivity extends AppCompatActivity {
         sv.scrollBy(100,100);
     }
 
+    //Write to sensor view from global vector of
+    //Sensor data
+    private  void printSensors() {
+        sensorv.setText("");
+        for(int i = 0; i < sensorData.size(); ++i)
+        {
+            sensorv.setText(sensorv.getText() +
+                    ">Sensor" + (i+1) + ": " +
+                    sensorData.get(i) + "\n\n");
+        }
+        sensorData.removeAllElements();
+    }
+
+    void readData()
+    {
+        final Handler handler = new Handler();
+        //This is the ASCII code for a newline character
+        final byte newline = 10;
+
+        stopThread = false;
+        bufferPos = 0;
+        readBuffer = new byte[1024];
+        inThread = new Thread(new Runnable()
+        {
+            public void run()
+            {
+                while(!Thread.currentThread().isInterrupted() && !stopThread)
+                {
+                    try
+                    {
+                        //check for received data
+                        int bytesAvailable = inStream.available();
+                        if(bytesAvailable > 0)
+                        {
+                            byte[] packetBytes = new byte[bytesAvailable];
+                            inStream.read(packetBytes);
+                            for(int i=0;i<bytesAvailable;i++)
+                            {
+                                byte b = packetBytes[i];
+                                if(b == newline)
+                                {
+                                    byte[] encodedBytes = new byte[bufferPos];
+                                    System.arraycopy(readBuffer, 0, encodedBytes, 0, encodedBytes.length);
+                                    final String data = new String(encodedBytes, "US-ASCII");
+                                    bufferPos = 0;
+
+                                    handler.post(new Runnable()
+                                    {
+                                        public void run()
+                                        {
+                                            sensorData.add(data);
+                                            //print all 4 sensors
+                                            if(sensorData.size() > 3)
+                                            {
+                                                printSensors();
+                                            }
+                                        }
+                                    });
+                                }
+                                else
+                                {
+                                    readBuffer[bufferPos++] = b;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        stopThread = true;
+                    }
+                }
+            }
+        });
+        inThread.start();
+    }
+
     //Send remaining data and close connection
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        stopThread = true;
         if (outStream != null) {
             try {
                 outStream.flush();
+                outStream.close();
             } catch (Exception e) {
-                print("Failed to send data");
+                print("Failed to send data or close stream");
             }
         }
         try {
             btSocket.close();
         } catch (Exception e) {
             print("Failed to close socket");
+        }
+        try {
+            inStream.close();
+        } catch (Exception e) {
+            print("Failed to close input stream");
         }
     }
 }
