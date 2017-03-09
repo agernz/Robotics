@@ -25,14 +25,15 @@ import java.util.Set;
 import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
-    String BT_ADAPTER = "HC-05";
+    private String BT_ADAPTER = "HC-05";
     private BluetoothAdapter BA;
     private BluetoothSocket btSocket = null;
     private OutputStream outStream = null;
     private static final UUID MY_UUID =
             UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
-    Boolean paired = false;
+    private Boolean connected = false;
+    private Boolean paired = false;
 
     ScrollView sv;
     TextView tv;
@@ -79,7 +80,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             //Only connect if device is not already connected
-            if (btSocket == null) {
+            if (!connected) {
                 //query paired devices
                 Set<BluetoothDevice> pairedDevices = BA.getBondedDevices();
                 if (pairedDevices.size() > 0) {
@@ -89,6 +90,8 @@ public class MainActivity extends AppCompatActivity {
                         if (BT_ADAPTER.equals(device.getName())) {
                             //Device is paired
                             paired = true;
+
+                            connected = true;
                             //Get MAC address
                             String address = device.getAddress();
 
@@ -100,6 +103,7 @@ public class MainActivity extends AppCompatActivity {
                                 btSocket = device.createRfcommSocketToServiceRecord(MY_UUID);
                             } catch (Exception e) {
                                 print("Failed to create socket!");
+                                connected = false;
                             }
 
                             //End discovery to save bandwidth
@@ -111,6 +115,7 @@ public class MainActivity extends AppCompatActivity {
                                 btSocket.connect();
                                 print("Connection established, data link open!");
                             } catch (Exception e) {
+                                connected = false;
                                 print("Connection Failed!");
                                 try {
                                     btSocket.close();
@@ -123,8 +128,10 @@ public class MainActivity extends AppCompatActivity {
                             print("Creating an output stream...");
                             try {
                                 outStream = btSocket.getOutputStream();
-                                print("Connection successfully established!");
+                                if (connected)
+                                    print("Connection successfully established!");
                             } catch (Exception e) {
+                                connected = false;
                                 print("Failed to create an output stream");
                             }
 
@@ -223,6 +230,9 @@ public class MainActivity extends AppCompatActivity {
 
     //Handle gamepad axis input to control robot
     //DPAD
+    private int lastdx = 0;
+    private  int lastdy = 0;
+    private  float thresh = .5f;
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
         // Check that the event came from a game controller
@@ -230,18 +240,119 @@ public class MainActivity extends AppCompatActivity {
                 InputDevice.SOURCE_JOYSTICK &&
                 event.getAction() == MotionEvent.ACTION_MOVE) {
 
-            int x = (int)(event.getAxisValue(MotionEvent.AXIS_HAT_X));
-            int y = (int)(event.getAxisValue(MotionEvent.AXIS_HAT_Y));
+            //get dpad input
+            int dx = (int)(event.getAxisValue(MotionEvent.AXIS_HAT_X));
+            int dy = (int)(event.getAxisValue(MotionEvent.AXIS_HAT_Y));
 
-            if (x == 1)
-                sendData("d1");
-            else if(x == -1)
-                    sendData("d3");;
-            if (y == 1)
-                sendData("d0");
-            else if(y == -1)
-                sendData("d2");
+            //get axis input
+            int x = (int)((event.getAxisValue(MotionEvent.AXIS_X))*10);
+            int y = (int)((event.getAxisValue(MotionEvent.AXIS_Y))*10);
+            int z = (int)((event.getAxisValue(MotionEvent.AXIS_Z))*10);
+            int rz = (int)((event.getAxisValue(MotionEvent.AXIS_RZ))*10);
 
+            //get trigger input
+            int triggerx = (int)((event.getAxisValue(MotionEvent.AXIS_RTRIGGER))*10);
+            int triggery = (int)((event.getAxisValue(MotionEvent.AXIS_LTRIGGER))*10);
+
+            //handle dpad, send data only if change in value
+            if (lastdx != dx) {
+                if(dx == 1)
+                    sendData("d31");
+                else if (dx == -1)
+                    sendData("d11");
+                else if (dx == 0) {
+                    sendData("d30");
+                    sendData("d10");
+                }
+            }
+            if (lastdy != dy) {
+                if(dy == 1)
+                    sendData("d01");
+                else if (dy == -1)
+                    sendData("d21");
+                else if (dy == 0) {
+                    sendData("d00");
+                    sendData("d20");
+                }
+            }
+            lastdx = dx;
+            lastdy = dy;
+
+            //Handle joystick input
+            if(x > thresh || x < -thresh) {
+                //send a '+' sign to indicate positive value
+                //and make data 3 characters
+                //9 is the max value to send to stay within 3 chars
+                if (x > 0) {
+                    if(x > 9)
+                        x = 9;
+                    sendData("x+" + Integer.toString(x));
+                }
+                else {
+                    if(x < -9)
+                        x = -9;
+                    sendData("x" + Integer.toString(x));
+                }
+            }
+            if(y > thresh || y < -thresh) {
+                //send a '+' sign to indicate positive value
+                //and make data 3 characters
+                //9 is the max value to send to stay within 3 chars
+                if (y > 0) {
+                    if(y > 9)
+                        y = 9;
+                    sendData("y+" + Integer.toString(y));
+                }
+                else {
+                    if(y < -9)
+                        y = -9;
+                    sendData("y" + Integer.toString(y));
+                }
+            }
+            if(z > thresh || z < -thresh) {
+                //send a '+' sign to indicate positive value
+                //and make data 3 characters
+                //9 is the max value to send to stay within 3 chars
+                if (z > 0) {
+                    if(z > 9)
+                        z = 9;
+                    sendData("z+" + Integer.toString(z));
+                }
+                else {
+                    if(z < -9)
+                        z = -9;
+                    sendData("z" + Integer.toString(z));
+                }
+            }
+            if(rz > thresh || rz < -thresh) {
+                //send a '+' sign to indicate positive value
+                //and make data 3 characters
+                //9 is the max value to send to stay within 3 chars
+                if (rz > 0) {
+                    if(rz > 9)
+                        rz = 9;
+                    sendData("r+" + Integer.toString(rz));
+                }
+                else {
+                    if(rz < -9)
+                        rz = -9;
+                    sendData("r" + Integer.toString(rz));
+                }
+            }
+
+            //Handle trigger input
+            if(triggerx > thresh)
+            {
+                if(triggerx > 9)
+                    triggerx = 9;
+                sendData("tx" + Integer.toString(triggerx));
+            }
+            if(triggery > thresh)
+            {
+                if(triggery > 9)
+                    triggery = 9;
+                sendData("ty" + Integer.toString(triggery));
+            }
             return true;
         }
         return false;
